@@ -5,45 +5,77 @@ import com.itextpdf.kernel.pdf.canvas.parser.PdfTextExtractor;
 import java.io.File;
 import java.io.IOException;
 import java.util.*;
-
-import static java.util.Objects.requireNonNull;
-
 public class BooleanSearchEngine implements SearchEngine {
-    private final Map<String, List<PageEntry>> database = new HashMap<>();
+
+    private final Map<String, List<PageEntry>> words;
 
     public BooleanSearchEngine(File pdfsDir) throws IOException {
-        for (File pdf : requireNonNull(pdfsDir.listFiles())) {
+
+        List<File> listOfPDFFiles = new ArrayList<>(List.of(Objects.requireNonNull(pdfsDir.listFiles())));
+
+        words = new HashMap<>();
+
+        for (File pdf : listOfPDFFiles) {
+
             var doc = new PdfDocument(new PdfReader(pdf));
-            int pageCount = doc.getNumberOfPages();
-            for (int i = 1; i <= pageCount; i++) {
-                var page = doc.getPage(i);
-                var text = PdfTextExtractor.getTextFromPage(page);
-                var words = text.split("\\P{IsAlphabetic}+");
+
+            for (int i = 0; i < doc.getNumberOfPages(); i++) {
+
+                var textOfOnePage = PdfTextExtractor.getTextFromPage(doc.getPage(i + 1));
+
+                var allWordsOnPage = textOfOnePage.split("\\P{IsAlphabetic}+");
+
                 Map<String, Integer> freqs = new HashMap<>();
-                for (var word : words) { 
+
+                for (var word : allWordsOnPage) {
                     if (word.isEmpty()) {
                         continue;
                     }
-                    word = word.toLowerCase();
-                    freqs.put(word, freqs.getOrDefault(word, 0) + 1);
+                    freqs.put(word.toLowerCase(), freqs.getOrDefault(word.toLowerCase(), 0) + 1);
                 }
-                for (String word : freqs.keySet()) {
-                    PageEntry pageEntry = new PageEntry(pdf.getName(), i, freqs.get(word));
-                    if (database.containsKey(word)) {
-                        database.get(word).add(pageEntry);
-                    } else {
-                        database.put(word, new ArrayList<>());
-                        database.get(word).add(pageEntry);
+
+                int count;
+                for (var word : freqs.keySet()) {
+                    String wordToLowerCase = word.toLowerCase();
+                    if (freqs.get(wordToLowerCase) != null) {
+                        count = freqs.get(wordToLowerCase);
+                        words.computeIfAbsent(wordToLowerCase, k -> new ArrayList<>()).add(new PageEntry(pdf.getName(), i + 1, count));
                     }
                 }
+                freqs.clear();
             }
         }
+        Collections.sort(listOfPDFFiles);
     }
 
     @Override
     public List<PageEntry> search(String word) {
-        List<PageEntry> result = database.get(word);
-        Collections.sort(result);
-        return result;
+
+        String wordToLowerCase = word.toLowerCase();
+        if (words.get(wordToLowerCase) != null) {
+            List<PageEntry> result = new ArrayList<>(words.get(wordToLowerCase));
+            Collections.sort(result);
+        }
+        return Collections.emptyList();
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof BooleanSearchEngine)) return false;
+        BooleanSearchEngine that = (BooleanSearchEngine) o;
+        return Objects.equals(words, that.words);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(words);
+    }
+
+    @Override
+    public String toString() {
+        return "BooleanSearchEngine{" +
+                "words=" + words +
+                '}';
     }
 }
