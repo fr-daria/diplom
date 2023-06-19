@@ -11,7 +11,7 @@ public class BooleanSearchEngine implements SearchEngine {
 
     public BooleanSearchEngine(File pdfsDir) throws IOException {
 
-        List<File> listOfPDFFiles = new ArrayList<>(List.of(Objects.requireNonNull(pdfsDir.listFiles())));
+        List<File> listOfPDFFiles = List.of(Objects.requireNonNull(pdfsDir.listFiles()));
 
         words = new HashMap<>();
 
