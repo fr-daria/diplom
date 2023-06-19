@@ -4,78 +4,71 @@ import com.itextpdf.kernel.pdf.canvas.parser.PdfTextExtractor;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.*;
-public class BooleanSearchEngine implements SearchEngine {
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
-    private final Map<String, List<PageEntry>> words;
+public class BooleanSearchEngine implements SearchEngine {
+    protected Map<String, List<PageEntry>> indexing;
 
     public BooleanSearchEngine(File pdfsDir) throws IOException {
 
-        List<File> listOfPDFFiles = List.of(Objects.requireNonNull(pdfsDir.listFiles()));
+        List<File> files;
 
-        words = new HashMap<>();
+        try (Stream<Path> paths = Files.walk(Paths.get(String.valueOf(pdfsDir)))) {
+            files = paths
+                    .filter(Files::isRegularFile)
+                    .map(Path::toFile)
+                    .collect(Collectors.toList());
+        }
 
-        for (File pdf : listOfPDFFiles) {
+        indexing = new HashMap<>();
 
-            var doc = new PdfDocument(new PdfReader(pdf));
+        for (File file : files) {
+            var doc = new PdfDocument(new PdfReader(file));
 
-            for (int i = 0; i < doc.getNumberOfPages(); i++) {
-
-                var textOfOnePage = PdfTextExtractor.getTextFromPage(doc.getPage(i + 1));
-
-                var allWordsOnPage = textOfOnePage.split("\\P{IsAlphabetic}+");
-
+            for (int i = 1; i < doc.getNumberOfPages() + 1; i++) {
+                var pdfPage = doc.getPage(i);
+                var text = PdfTextExtractor.getTextFromPage(pdfPage);
+                var words = text.split("\\P{IsAlphabetic}+");
                 Map<String, Integer> freqs = new HashMap<>();
 
-                for (var word : allWordsOnPage) {
+                for (var word : words) { // перебираем слова
                     if (word.isEmpty()) {
                         continue;
                     }
-                    freqs.put(word.toLowerCase(), freqs.getOrDefault(word.toLowerCase(), 0) + 1);
+                    word = word.toLowerCase();
+                    freqs.put(word, freqs.getOrDefault(word, 0) + 1);
                 }
 
-                int count;
-                for (var word : freqs.keySet()) {
-                    String wordToLowerCase = word.toLowerCase();
-                    if (freqs.get(wordToLowerCase) != null) {
-                        count = freqs.get(wordToLowerCase);
-                        words.computeIfAbsent(wordToLowerCase, k -> new ArrayList<>()).add(new PageEntry(pdf.getName(), i + 1, count));
+                for (Map.Entry<String, Integer> entry : freqs.entrySet()) {
+                    List<PageEntry> pageEntries;
+                    String key = entry.getKey();
+                    Integer value = entry.getValue();
+                    if (indexing.containsKey(key)) {
+                        pageEntries = indexing.get(key);
+                    } else {
+                        pageEntries = new ArrayList<>();
                     }
+                    pageEntries.add(new PageEntry(file.getName(), i, value));
+                    indexing.put(key, pageEntries);
                 }
-                freqs.clear();
+
+                for (var entry : indexing.entrySet()) {
+                    Collections.sort(entry.getValue());
+                }
             }
         }
-        Collections.sort(listOfPDFFiles);
     }
 
     @Override
     public List<PageEntry> search(String word) {
 
-        String wordToLowerCase = word.toLowerCase();
-        if (words.get(wordToLowerCase) != null) {
-            List<PageEntry> result = new ArrayList<>(words.get(wordToLowerCase));
-            Collections.sort(result);
-        }
-        return Collections.emptyList();
-    }
+        List<PageEntry> list = indexing.get(word.toLowerCase());
 
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (!(o instanceof BooleanSearchEngine)) return false;
-        BooleanSearchEngine that = (BooleanSearchEngine) o;
-        return Objects.equals(words, that.words);
-    }
-
-    @Override
-    public int hashCode() {
-        return Objects.hash(words);
-    }
-
-    @Override
-    public String toString() {
-        return "BooleanSearchEngine{" +
-                "words=" + words +
-                '}';
+        return Objects.requireNonNullElse(list, Collections.emptyList());
     }
 }
